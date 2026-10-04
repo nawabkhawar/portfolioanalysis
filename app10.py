@@ -185,7 +185,7 @@ fallback_csv_data = (
 # Render interactive Demo Button right under file picker element
 trigger_demo = st.button("✨ Try Demo with Sample Data", help="Instantly calculate analytics using demo metrics without manually downloading files")
 
-# Data processing fork selector
+# Data processing fork selector initial setups
 holdings_df = None
 is_demo_mode = False
 
@@ -196,6 +196,51 @@ elif trigger_demo:
     # Read embedded fallback layout context directly into pandas memory buffer
     holdings_df = pd.read_csv(io.StringIO(fallback_csv_data))
     is_demo_mode = True
+
+# --- CONDITIONAL STEP-BY-STEP ZERODHA INSTRUCTIONS GUIDE PANEL (Disappears upon successful asset loading) ---
+if holdings_df is None:
+    st.markdown("---")
+    st.info("💡 **Need help getting your data file from Zerodha? Follow either method below:**")
+    
+    guide_col1, guide_col2 = st.columns(2)
+    
+    with guide_col2:
+        st.markdown("### 🔍 Way 2 - Google Instructions")
+        google_url = (
+            "https://www.google.com/search?q=how+to+download+holding+statement+from+zerodha"
+            "&oq=how+to+download+holding&gs_lcrp=EgZjaHJvbWUqCggBEAAYgAQYtAcyBggAEEUYOTIKCAEQABiABBi0Bz"
+            "IKCAIQABiABBi0BzIKCAMQABiABBi0BzIKCAQQABiABBi0BzIKCAUQABiABBi0BzIKCAYQABiABBi0BzIKCAcQABi"
+            "ABBi0BzIKCAgQABiABBi0BzIKCAkQABiABBi0B9IBCDU5NjhqMGo3qAIAsAIA&sourceid=chrome&source=chrome.ob&ie=UTF-8"
+        )
+        st.markdown(f"[🔗 **How to download Zerodha's holding file**]({google_url})")
+        
+    with guide_col1:
+        st.markdown("### 📊 Way 1 - Direct Download Steps")
+        st.write(
+            "You can download your holdings report directly as an Excel file by logging into "
+            "[Zerodha's Console](https://console.zerodha.com/) and navigating to your portfolio holdings."
+        )
+        
+        with st.expander("🌐 Download Holdings Report from Console (Web)", expanded=True):
+            st.markdown(
+                """
+                * Log in to [Zerodha's Console](https://console.zerodha.com/).
+                * Click on **Portfolio** in the top menu.
+                * Select **Holdings** from the dropdown menu.
+                * Choose a specific date if you need historical holdings data.
+                * Click on **XLSX** beside the Download button to save the file to your device.
+                """
+            )
+            
+        with st.expander("📱 Download Holdings Report from Kite Mobile App", expanded=True):
+            st.markdown(
+                """
+                * Tap on your **User ID** avatar icon at the bottom right corner of the screen.
+                * Scroll down and tap on **Portfolio** nested under the *Console* utilities section.
+                * Scroll down to the bottom of the loaded web view.
+                * Tap on **XLSX** located right beside the Download button label.
+                """
+            )
 
 if holdings_df is not None and not holdings_df.empty:
     # Visual validation block running strictly under sample demo selections
