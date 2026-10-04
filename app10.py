@@ -82,22 +82,104 @@ def format_currency_indian(val):
     else:
         return f'₹{val:,.2f}'
 
-st.title('📈 Nawabs Portfolio Performance & Valuation Dashboard - No data is saved, its all in your laptop/mobile')
-st.write('Upload your broker holdings sheet below to parse active trends instantly.')
+def parse_flexible_portfolio(file_obj, file_name):
+    """
+    Intelligently reads file bytes to accept standard Zerodha CSV columns,
+    or handles multi-section statement layouts seamlessly.
+    """
+    try:
+        if file_name.endswith('.xlsx') or file_name.endswith('.xls'):
+            df_raw = pd.read_excel(file_obj, header=None)
+        else:
+            content = file_obj.read()
+            if isinstance(content, bytes):
+                content = content.decode('utf-8', errors='ignore')
+            df_raw = pd.read_csv(io.StringIO(content), header=None)
+            
+        # Check if this matches a complex multi-section statement format
+        df_str = df_raw.astype(str)
+        is_statement = df_str.apply(lambda row: row.str.contains('Holdings Statement|Investment Value', case=False).any(), axis=1).any()
+        
+        if is_statement:
+            # Locate the Equity section rows
+            equity_header_idx = None
+            for idx, row in df_raw.iterrows():
+                row_vals = [str(x).strip().lower() for x in row.dropna()]
+                if 'symbol' in row_vals and 'quantity available' in row_vals:
+                    equity_header_idx = idx
+                    break
+            
+            if equity_header_idx is not None:
+                # Process the data slice under the isolated table headers
+                df_clean = df_raw.iloc[equity_header_idx:].copy()
+                df_clean.columns = df_clean.iloc[0].str.strip()
+                df_clean = df_clean.iloc[1:].reset_index(drop=True)
+                df_clean = df_clean.dropna(subset=['Symbol', 'Quantity Available'])
+                
+                # Filter out subsequent mutual fund headers or spacer blank sections
+                stop_idx = None
+                for idx, row_val in enumerate(df_clean['Symbol'].astype(str)):
+                    if 'mutual funds' in row_val.lower() or 'client id' in row_val.lower() or row_val.strip() == '':
+                        stop_idx = idx
+                        break
+                if stop_idx is not None:
+                    df_clean = df_clean.iloc[:stop_idx]
+                
+                # Harmonize header column definitions to standard Zerodha formatting blueprint
+                df_mapped = pd.DataFrame()
+                df_mapped['Instrument'] = df_clean['Symbol'].astype(str).str.strip()
+                df_mapped['Qty.'] = pd.to_numeric(df_clean['Quantity Available'], errors='coerce')
+                df_mapped['Avg. cost'] = pd.to_numeric(df_clean['Average Price'], errors='coerce')
+                
+                return df_mapped.dropna().reset_index(drop=True)
+                
+        # Fallback Default: Parse as a standard, straightforward Zerodha layout
+        if 'seek' in dir(file_obj):
+            file_obj.seek(0)
+        if file_name.endswith('.xlsx') or file_name.endswith('.xls'):
+            df_standard = pd.read_excel(file_obj)
+        else:
+            df_standard = pd.read_csv(file_obj)
+            
+        df_standard.columns = df_standard.columns.str.strip()
+        required = ['Instrument', 'Qty.', 'Avg. cost']
+        if all(col in df_standard.columns for col in required):
+            return df_standard[required].copy()
+        else:
+            # Try to map columns if slightly different casing/naming was used
+            mapped_df = pd.DataFrame()
+            for col in df_standard.columns:
+                c_clean = str(col).strip().lower()
+                if c_clean in ['instrument', 'symbol', 'shares']:
+                    mapped_df['Instrument'] = df_standard[col]
+                elif c_clean in ['qty.', 'qty', 'quantity', 'quantity available']:
+                    mapped_df['Qty.'] = df_standard[col]
+                elif c_clean in ['avg. cost', 'avg cost', 'average price', 'buy price']:
+                    mapped_df['Avg. cost'] = df_standard[col]
+            if len(mapped_df.columns) == 3:
+                return mapped_df
+                
+        st.error("❌ Column Layout Error: Uploaded file formatting columns could not be successfully resolved.")
+        return None
+    except Exception as e:
+        st.error(f"❌ File Parsing Exception Encountered: {e}")
+        return None
 
-# File Uploader component rendered at the top level
-uploaded_file = st.file_uploader('Choose your Zerodha holdings.csv file(we dont save the data, it will remain in your laptop/mobile)', type='csv')
+st.title('📈 Nawabs Portfolio Performance & Valuation Dashboard - No data is saved, its all in your laptop/mobile')
+st.write('Upload your broker holdings sheet below (supports standard Zerodha CSVs or Excel Statements) to parse active trends instantly.')
+
+# File Uploader component updated to accept both target variants seamlessly
+uploaded_file = st.file_uploader('Choose your broker holdings file (.csv or .xlsx)', type=['csv', 'xlsx', 'xls'])
 
 # Dynamic fallback raw string used internally for the demo engine
 fallback_csv_data = (
-    "Instrument,Qty.,Avg. cost,LTP,Invested,Cur. val,P&L,Net chg.,Day chg.\n"
-    "APOLLOTYRE,255,321.7,405.6,82033.95,103428,21394.05,26.08,0.35\n"
-    "DELHIVERY,110,409.09,400.6,44999.7,44066,-933.7,-2.07,-2.22\n"
-    "ETERNAL,50,115.81,313.9,5790,15695,9905,171.05,-1.91\n"
-    "INFY,5,1438.91,1035,7194.5,5175,2019,-28.07,4.02\n"
-    "LALPATHLAB,20,1514.87,2020.4,30297.4,40408,10111,33.37,1.65\n"
-    "RELIANCE,74,426.69,1167.7,31575.4,86409.8,54834.4,173.66,-1.63\n"
-    "WIPRO,151,195.92,159.5,29584,24084.5,-5499.5,-18.59,0.69"
+    "Instrument,Qty.,Avg. cost\n"
+    "APOLLOTYRE,255,321.70\n"
+    "DELHIVERY,110,409.09\n"
+    "INFY,5,1438.91\n"
+    "LALPATHLAB,20,1514.87\n"
+    "RELIANCE,74,426.69\n"
+    "WIPRO,151,195.92"
 )
 
 # Render interactive Demo Button right under file picker element
@@ -108,16 +190,14 @@ holdings_df = None
 is_demo_mode = False
 
 if uploaded_file is not None:
-    holdings_df = pd.read_csv(uploaded_file)
+    holdings_df = parse_flexible_portfolio(uploaded_file, uploaded_file.name)
     is_demo_mode = False
 elif trigger_demo:
     # Read embedded fallback layout context directly into pandas memory buffer
     holdings_df = pd.read_csv(io.StringIO(fallback_csv_data))
     is_demo_mode = True
 
-if holdings_df is not None:
-    holdings_df.columns = holdings_df.columns.str.strip()
-    
+if holdings_df is not None and not holdings_df.empty:
     # Visual validation block running strictly under sample demo selections
     if is_demo_mode:
         st.success("🎯 App is currently running on simulated demo portfolio metrics data!(Zerodha holdings file example as below)")
@@ -139,7 +219,7 @@ if holdings_df is not None:
 
     for idx, row in holdings_df.iterrows():
         raw_instrument = str(row['Instrument']).strip()
-        quantity = int(row['Qty.'])
+        quantity = int(float(row['Qty.']))
         avg_cost = float(row['Avg. cost'])
         yf_ticker, db_name = resolve_ticker(raw_instrument)
         cursor.execute('SELECT trade_date, high_price FROM historical_prices WHERE instrument_name = ? ORDER BY high_price DESC LIMIT 1', (db_name,))
@@ -231,6 +311,8 @@ if holdings_df is not None:
             sum_opportunity += opp_val
             sum_downside += down_val
             
+            # Formulating dictionary variables with the specified order:
+            # Lowest Price after Highest Price, followed by adjacent High Date and Low Date
             high_low_data.append({
                 'Instrument': item['instrument'], 
                 'Qty Held': item['qty'], 
