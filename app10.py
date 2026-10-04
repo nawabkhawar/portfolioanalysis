@@ -1,4 +1,5 @@
 import os
+import io
 import json
 import sqlite3
 import time
@@ -7,6 +8,7 @@ import pandas as pd
 import yfinance as yf
 import streamlit as st
 
+# Mute network warning layouts from console outputs safely by passing class
 warnings.filterwarnings('ignore', category=UserWarning, module='urllib3')
 
 st.set_page_config(page_title='Portfolio Intelligence Analytics', layout='wide', initial_sidebar_state='expanded')
@@ -86,29 +88,42 @@ st.write('Upload your broker holdings sheet below to parse active trends instant
 # File Uploader component rendered at the top level
 uploaded_file = st.file_uploader('Choose your Zerodha holdings.csv file(we dont save the data, it will remain in your laptop/mobile)', type='csv')
 
-# Example file downloader button sitting directly below the uploader box
-TEMPLATE_FILE = 'holdings_example.csv'
-if os.path.exists(TEMPLATE_FILE):
-    with open(TEMPLATE_FILE, 'rb') as f:
-        template_bytes = f.read()
-    st.download_button(
-        label="📥 If you want to try with example - Download Example Zerodha Holdings CSV Template from here and upload above",
-        data=template_bytes,
-        file_name='holdings_example.csv',
-        mime='text/csv'
-    )
-else:
-    fallback_csv = "Instrument,Qty.,Avg. cost,LTP,Invested,Cur. val,P&L,Net chg.,Day chg.\nAPOLLOTYRE,255,321.7,405.6,82033.95,103428,21394.05,26.08,0.35\nDELHIVERY,110,409.09,400.6,44999.7,44066,-933.7,-2.07,-2.22\nETERNAL,50,115.81,313.9,5790,15695,9905,171.05,-1.91\nINFY,5,1438.91,1035,7194.5,5175,2019,-28.07,4.02\nLALPATHLAB,20,1514.87,2020.4,30297.4,40408,10111,33.37,1.65\nRELIANCE,74,426.69,1167.7,31575.4,86409.8,54834.4,173.66,-1.63\nWIPRO,151,195.92,159.5,29584,24084.5,-5499.5,-18.59,0.69"
-    st.download_button(
-        label="📥 If you want to try with example - Download Example Zerodha Holdings CSV Template from here and upload above",
-        data=fallback_csv,
-        file_name='holdings_example.csv',
-        mime='text/csv'
-    )
+# Dynamic fallback raw string used internally for the demo engine
+fallback_csv_data = (
+    "Instrument,Qty.,Avg. cost,LTP,Invested,Cur. val,P&L,Net chg.,Day chg.\n"
+    "APOLLOTYRE,255,321.7,405.6,82033.95,103428,21394.05,26.08,0.35\n"
+    "DELHIVERY,110,409.09,400.6,44999.7,44066,-933.7,-2.07,-2.22\n"
+    "ETERNAL,50,115.81,313.9,5790,15695,9905,171.05,-1.91\n"
+    "INFY,5,1438.91,1035,7194.5,5175,2019,-28.07,4.02\n"
+    "LALPATHLAB,20,1514.87,2020.4,30297.4,40408,10111,33.37,1.65\n"
+    "RELIANCE,74,426.69,1167.7,31575.4,86409.8,54834.4,173.66,-1.63\n"
+    "WIPRO,151,195.92,159.5,29584,24084.5,-5499.5,-18.59,0.69"
+)
+
+# Render interactive Demo Button right under file picker element
+trigger_demo = st.button("✨ Try Demo with Sample Data", help="Instantly calculate analytics using demo metrics without manually downloading files")
+
+# Data processing fork selector
+holdings_df = None
+is_demo_mode = False
 
 if uploaded_file is not None:
     holdings_df = pd.read_csv(uploaded_file)
+    is_demo_mode = False
+elif trigger_demo:
+    # Read embedded fallback layout context directly into pandas memory buffer
+    holdings_df = pd.read_csv(io.StringIO(fallback_csv_data))
+    is_demo_mode = True
+
+if holdings_df is not None:
     holdings_df.columns = holdings_df.columns.str.strip()
+    
+    # Visual validation block running strictly under sample demo selections
+    if is_demo_mode:
+        st.success("🎯 App is currently running on simulated demo portfolio metrics data!(Zerodha holdings file example as below)")
+        with st.expander("📝 View Zerodha holding file used for this example", expanded=True):
+            st.dataframe(holdings_df, use_container_width=True)
+
     analysis_storage = []
     series_tracker = {}
     conn = sqlite3.connect(DB_FILE)
