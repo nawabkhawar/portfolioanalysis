@@ -13,6 +13,88 @@ warnings.filterwarnings('ignore', category=UserWarning, module='urllib3')
 
 st.set_page_config(page_title='Portfolio Intelligence Analytics', layout='wide', initial_sidebar_state='expanded')
 
+# --- CUSTOM CSS FOR BUTTON STYLING & LEFT ALIGNMENT ---
+st.markdown("""
+    <style>
+        /* Target the File Uploader (Upload Button) */
+        div[data-testid="stFileUploader"] button {
+            background-color: #28a745 !important;
+            color: white !important;
+            border-radius: 4px;
+            border: none !important;
+            transition: background-color 0.3s ease;
+        }
+        div[data-testid="stFileUploader"] button:hover {
+            background-color: #218838 !important;
+            color: white !important;
+        }
+        
+        /* Hide the "Drag and drop file here" and size limit text to keep it left-aligned only */
+        div[data-testid="stFileUploaderDropzone"] [data-testid="stFileUploadDropzoneInstructions"] {
+            display: none !important;
+        }
+        
+        /* Force left alignment of the file uploader widget components and remove trailing empty space */
+        div[data-testid="stFileUploaderDropzone"] {
+            padding: 10px !important;
+            text-align: left !important;
+            display: flex !important;
+            justify-content: flex-start !important;
+            align-items: center !important;
+            border: none !important; /* Removes the dash box border if desired */
+            background-color: transparent !important;
+        }
+        
+        /* Robust modern Streamlit button color fill targeting */
+        div[data-testid="stButton"] > button {
+            background-color: #FFD700 !important;
+            color: #1E1E1E !important;
+            border: 1px solid #FFD700 !important;
+            border-radius: 4px !important;
+            font-weight: bold !important;
+            width: auto !important;
+            transition: background-color 0.3s ease, border-color 0.3s ease !important;
+        }
+        
+        div[data-testid="stButton"] > button:hover, 
+        div[data-testid="stButton"] > button:active, 
+        div[data-testid="stButton"] > button:focus {
+            background-color: #E6C200 !important;
+            color: #1E1E1E !important;
+            border-color: #E6C200 !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- JAVASCRIPT INJECTION TO RENAME BROWSE BUTTON & RE-ENFORCE DEMO BUTTON COLOR ---
+st.components.v1.html("""
+    <script>
+        const observer = new MutationObserver((mutations) => {
+            // 1. Handle Rename of "Browse files" -> "Process Holdings File"
+            const browseButtons = window.parent.document.querySelectorAll('div[data-testid="stFileUploader"] button');
+            browseButtons.forEach(button => {
+                const textNodes = button.querySelectorAll('span, p, div');
+                textNodes.forEach(node => {
+                    if (node.textContent.trim() === "Browse files") {
+                        node.textContent = "Process Holdings File";
+                    }
+                });
+            });
+
+            // 2. Fallback Direct DOM Color Enforcement for the Demo button
+            const allButtons = window.parent.document.querySelectorAll('div[data-testid="stButton"] button');
+            allButtons.forEach(button => {
+                if (button.textContent.includes("Try Demo with Sample Data")) {
+                    button.style.setProperty('background-color', '#FFD700', 'important');
+                    button.style.setProperty('color', '#1E1E1E', 'important');
+                    button.style.setProperty('border', '1px solid #FFD700', 'important');
+                }
+            });
+        });
+        observer.observe(window.parent.document.body, { childList: true, subtree: true });
+    </script>
+""", height=0)
+
 DB_FILE = 'portfolio_cloud_cache.db'
 
 def init_db():
@@ -83,10 +165,6 @@ def format_currency_indian(val):
         return f'₹{val:,.2f}'
 
 def parse_flexible_portfolio(file_obj, file_name):
-    """
-    Intelligently reads file bytes to accept standard Zerodha CSV columns,
-    or handles multi-section statement layouts seamlessly.
-    """
     try:
         if file_name.endswith('.xlsx') or file_name.endswith('.xls'):
             df_raw = pd.read_excel(file_obj, header=None)
@@ -96,12 +174,10 @@ def parse_flexible_portfolio(file_obj, file_name):
                 content = content.decode('utf-8', errors='ignore')
             df_raw = pd.read_csv(io.StringIO(content), header=None)
             
-        # Check if this matches a complex multi-section statement format
         df_str = df_raw.astype(str)
         is_statement = df_str.apply(lambda row: row.str.contains('Holdings Statement|Investment Value', case=False).any(), axis=1).any()
         
         if is_statement:
-            # Locate the Equity section rows
             equity_header_idx = None
             for idx, row in df_raw.iterrows():
                 row_vals = [str(x).strip().lower() for x in row.dropna()]
@@ -110,13 +186,11 @@ def parse_flexible_portfolio(file_obj, file_name):
                     break
             
             if equity_header_idx is not None:
-                # Process the data slice under the isolated table headers
                 df_clean = df_raw.iloc[equity_header_idx:].copy()
                 df_clean.columns = df_clean.iloc[0].str.strip()
                 df_clean = df_clean.iloc[1:].reset_index(drop=True)
                 df_clean = df_clean.dropna(subset=['Symbol', 'Quantity Available'])
                 
-                # Filter out subsequent mutual fund headers or spacer blank sections
                 stop_idx = None
                 for idx, row_val in enumerate(df_clean['Symbol'].astype(str)):
                     if 'mutual funds' in row_val.lower() or 'client id' in row_val.lower() or row_val.strip() == '':
@@ -125,7 +199,6 @@ def parse_flexible_portfolio(file_obj, file_name):
                 if stop_idx is not None:
                     df_clean = df_clean.iloc[:stop_idx]
                 
-                # Harmonize header column definitions to standard Zerodha formatting blueprint
                 df_mapped = pd.DataFrame()
                 df_mapped['Instrument'] = df_clean['Symbol'].astype(str).str.strip()
                 df_mapped['Qty.'] = pd.to_numeric(df_clean['Quantity Available'], errors='coerce')
@@ -133,7 +206,6 @@ def parse_flexible_portfolio(file_obj, file_name):
                 
                 return df_mapped.dropna().reset_index(drop=True)
                 
-        # Fallback Default: Parse as a standard, straightforward Zerodha layout
         if 'seek' in dir(file_obj):
             file_obj.seek(0)
         if file_name.endswith('.xlsx') or file_name.endswith('.xls'):
@@ -146,7 +218,6 @@ def parse_flexible_portfolio(file_obj, file_name):
         if all(col in df_standard.columns for col in required):
             return df_standard[required].copy()
         else:
-            # Try to map columns if slightly different casing/naming was used
             mapped_df = pd.DataFrame()
             for col in df_standard.columns:
                 c_clean = str(col).strip().lower()
@@ -193,7 +264,6 @@ if uploaded_file is not None:
     holdings_df = parse_flexible_portfolio(uploaded_file, uploaded_file.name)
     is_demo_mode = False
 elif trigger_demo:
-    # Read embedded fallback layout context directly into pandas memory buffer
     holdings_df = pd.read_csv(io.StringIO(fallback_csv_data))
     is_demo_mode = True
 
@@ -208,9 +278,9 @@ if holdings_df is None:
         st.markdown("### 🔍 Way 2 - Google Instructions")
         google_url = (
             "https://www.google.com/search?q=how+to+download+holding+statement+from+zerodha"
-            "&oq=how+to+download+holding&gs_lcrp=EgZjaHJvbWUqCggBEAAYgAQYtAcyBggAEEUYOTIKCAEQABiABBi0Bz"
+            "&oq=how+to+download+holding+&gs_lcrp=EgZjaHJvbWUqCggBEAAYgAQYtAcyBggAEEUYOTIKCAEQABiABBi0Bz"
             "IKCAIQABiABBi0BzIKCAMQABiABBi0BzIKCAQQABiABBi0BzIKCAUQABiABBi0BzIKCAYQABiABBi0BzIKCAcQABi"
-            "ABBi0BzIKCAgQABiABBi0BzIKCAkQABiABBi0B9IBCDU5NjhqMGo3qAIAsAIA&sourceid=chrome&source=chrome.ob&ie=UTF-8"
+            "ABBi0BzIKCAgQABiABBi0BzIKCAkQABiABBi0B9IBCDU5NHERjMGo3qAIAsAIA&sourceid=chrome&source=chrome.ob&ie=UTF-8"
         )
         st.markdown(f"[🔗 **How to download Zerodha's holding file**]({google_url})")
         
@@ -243,7 +313,6 @@ if holdings_df is None:
             )
 
 if holdings_df is not None and not holdings_df.empty:
-    # Visual validation block running strictly under sample demo selections
     if is_demo_mode:
         st.success("🎯 App is currently running on simulated demo portfolio metrics data!(Zerodha holdings file example as below)")
         with st.expander("📝 View Zerodha holding file used for this example", expanded=True):
@@ -307,7 +376,6 @@ if holdings_df is not None and not holdings_df.empty:
     conn.close()
 
     if raw_table_rows:
-        # --- PORTFOLIO STRATEGIC SUMMARY OVERVIEW (TOP LEVEL) ---
         st.subheader('📊 Portfolio Strategic Summary Overview')
         col1, col2, col3, col4 = st.columns(4)
         col1.metric(label='Total Invested Base', value=format_currency_indian(total_invested_calc))
@@ -317,7 +385,6 @@ if holdings_df is not None and not holdings_df.empty:
         
         st.markdown('---')
         
-        # --- ACTIVE POSITION BREAKDOWN GRID MATRIX ---
         st.subheader('📋 todays/last trading session - profit & loss per share analysis')
         st.info('💡 Pro-Tip: Click directly on any column header to sort it instantly in Ascending or Descending order!')
         final_table_data = []
@@ -356,8 +423,6 @@ if holdings_df is not None and not holdings_df.empty:
             sum_opportunity += opp_val
             sum_downside += down_val
             
-            # Formulating dictionary variables with the specified order:
-            # Lowest Price after Highest Price, followed by adjacent High Date and Low Date
             high_low_data.append({
                 'Instrument': item['instrument'], 
                 'Qty Held': item['qty'], 
