@@ -86,7 +86,7 @@ st.write('Upload your broker holdings sheet below to parse active trends instant
 # File Uploader component rendered at the top level
 uploaded_file = st.file_uploader('Choose your Zerodha holdings.csv file(we dont save the data, it will remain in your laptop/mobile)', type='csv')
 
-# --- SHIFTED EXAMPLE FILE TEMPLATE DOWNLOADER BUTTON DIRECTLY BELOW THE UPLOADER COMPONENT ---
+# Example file downloader button sitting directly below the uploader box
 TEMPLATE_FILE = 'holdings_example.csv'
 if os.path.exists(TEMPLATE_FILE):
     with open(TEMPLATE_FILE, 'rb') as f:
@@ -98,7 +98,6 @@ if os.path.exists(TEMPLATE_FILE):
         mime='text/csv'
     )
 else:
-    # Memory fallback backup parsing data securely if absolute files are missing on target directories
     fallback_csv = "Instrument,Qty.,Avg. cost,LTP,Invested,Cur. val,P&L,Net chg.,Day chg.\nAPOLLOTYRE,255,321.7,405.6,82033.95,103428,21394.05,26.08,0.35\nDELHIVERY,110,409.09,400.6,44999.7,44066,-933.7,-2.07,-2.22\nETERNAL,50,115.81,313.9,5790,15695,9905,171.05,-1.91\nINFY,5,1438.91,1035,7194.5,5175,2019,-28.07,4.02\nLALPATHLAB,20,1514.87,2020.4,30297.4,40408,10111,33.37,1.65\nRELIANCE,74,426.69,1167.7,31575.4,86409.8,54834.4,173.66,-1.63\nWIPRO,151,195.92,159.5,29584,24084.5,-5499.5,-18.59,0.69"
     st.download_button(
         label="📥 If you want to try with example - Download Example Zerodha Holdings CSV Template from here and upload above",
@@ -155,7 +154,7 @@ if uploaded_file is not None:
             total_unrealized_calc += unrealized_pnl
             analysis_storage.append({
                 'instrument': db_name, 'qty': quantity, 'avg_cost': avg_cost, 'invested': invested_amount,
-                'h_price': h_price, 'h_date': h_date, 'l_price': l_price, 'l_date': l_date, 'current_value': current_value
+                'h_price': h_price, 'h_date': h_date, 'l_price': l_price, 'l_date': l_date, 'current_value': current_value, 'current_price': ltp
             })
             raw_table_rows.append({
                 'Company': db_name, 'Qty': quantity, 'Avg. Cost': avg_cost, 'LTP': ltp,
@@ -168,14 +167,17 @@ if uploaded_file is not None:
     conn.close()
 
     if raw_table_rows:
-        st.markdown('---')
+        # --- PORTFOLIO STRATEGIC SUMMARY OVERVIEW (TOP LEVEL) ---
         st.subheader('📊 Portfolio Strategic Summary Overview')
         col1, col2, col3, col4 = st.columns(4)
         col1.metric(label='Total Invested Base', value=format_currency_indian(total_invested_calc))
         col2.metric(label='Current Holding Value', value=format_currency_indian(total_current_calc))
         col3.metric(label='Total 1D Portfolio Shift', value=format_currency_indian(total_1d_change_calc), delta=f'{total_1d_change_calc:+,.2f}')
         col4.metric(label='Net Unrealized Returns', value=format_currency_indian(total_unrealized_calc), delta=f'{total_unrealized_calc:+,.2f}')
-
+        
+        st.markdown('---')
+        
+        # --- ACTIVE POSITION BREAKDOWN GRID MATRIX ---
         st.subheader('📋 todays/last trading session - profit & loss per share analysis')
         st.info('💡 Pro-Tip: Click directly on any column header to sort it instantly in Ascending or Descending order!')
         final_table_data = []
@@ -213,17 +215,31 @@ if uploaded_file is not None:
             sum_current_val += curr_val
             sum_opportunity += opp_val
             sum_downside += down_val
+            
             high_low_data.append({
-                'Instrument': item['instrument'], 'Qty Held': item['qty'], 'Yearly High Price': item['h_price'], 'High Date': item['h_date'],
-                'Yearly Low Price': item['l_price'], 'Low Date': item['l_date'], 'Max Potential Value (At High)': max_val, 'Min Potential Value (At Low)': min_val,
-                'Current Value': curr_val, 'Downside': down_val, 'Opportunity': opp_val
+                'Instrument': item['instrument'], 
+                'Qty Held': item['qty'], 
+                'Current Price': item['current_price'],
+                'Higest Price in last 1 yr': item['h_price'], 
+                'Lowest Price in last 1 yr': item['l_price'], 
+                'High Date': item['h_date'],
+                'Low Date': item['l_date'], 
+                'Total Value @High': max_val, 
+                'Total Value @Low': min_val,
+                'Current Total': curr_val, 
+                'Opportunity': opp_val,
+                'Downside': down_val
             })
         hl_df = pd.DataFrame(high_low_data)
         st.dataframe(hl_df, use_container_width=True, hide_index=True, column_config={
-            'Yearly High Price': st.column_config.NumberColumn(format='₹%,.2f'), 'Yearly Low Price': st.column_config.NumberColumn(format='₹%,.2f'),
-            'Max Potential Value (At High)': st.column_config.NumberColumn(format='₹%,.2f'), 'Min Potential Value (At Low)': st.column_config.NumberColumn(format='₹%,.2f'),
-            'Current Value': st.column_config.NumberColumn(format='₹%,.2f'), 'Downside': st.column_config.NumberColumn(format='₹%,.2f'),
-            'Opportunity': st.column_config.NumberColumn(format='₹%,.2f')
+            'Current Price': st.column_config.NumberColumn(format='₹%,.2f'),
+            'Higest Price in last 1 yr': st.column_config.NumberColumn(format='₹%,.2f'), 
+            'Lowest Price in last 1 yr': st.column_config.NumberColumn(format='₹%,.2f'),
+            'Total Value @High': st.column_config.NumberColumn(format='₹%,.2f'), 
+            'Total Value @Low': st.column_config.NumberColumn(format='₹%,.2f'),
+            'Current Total': st.column_config.NumberColumn(format='₹%,.2f'), 
+            'Opportunity': st.column_config.NumberColumn(format='₹%,.2f'),
+            'Downside': st.column_config.NumberColumn(format='₹%,.2f')
         })
 
         st.markdown('##### 📌 Peak Analytics Portfolio Aggregates')
